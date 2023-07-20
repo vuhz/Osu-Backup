@@ -1,2 +1,7 @@
-# Osu-Backup
-Simple script for backup osu beatmaps by keeping it's ID to text file and download using chimu.moe api
+# How to use
+
+```
+git clone https://github.com/vuhz/Osu-Backup.git
+cd Osu-backup
+python osubackup.py
+```
