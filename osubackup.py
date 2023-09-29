@@ -38,6 +38,8 @@ class Songs:
     def __init__(self, path) -> None:
         self.path = path
         self.max_worker = 0
+
+        self.init_config()
         pass
     def init_config(self):
         with open("config.json", "r") as f:
