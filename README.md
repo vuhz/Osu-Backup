@@ -12,4 +12,3 @@ python osubackup.py
 # Or 
 
 Download from [release](https://github.com/vuhz/Osu-Backup/releases)
-(i broke main script)
