@@ -10,19 +10,20 @@ def install(modules):
 module_list = ["tqdm", "requests", "pathlib", "urllib", "inquirer"]
 
 try:
-    import glob
-    import multiprocessing
     import os
-    import random
     import re
-    import sys as sus
+    import glob
     import time
+    import json
+    import random
     import urllib
+    import sys as sus
+    import multiprocessing
     from multiprocessing import Process, Semaphore
 
+    import tqdm
     import inquirer
     import requests
-    import tqdm
     from progress.spinner import Spinner
 
     from read_collection import collection_to_dict
@@ -133,10 +134,20 @@ class Collection:
     def __init__(self, path) -> None:
         self.secret = "xxx"
         self.oid = 22188
+        self.max_worker = 0
         self.path: str = path
         self.token = ""
         self.collections = {}
+        self.pool = multiprocessing.Pool(3)
+        self.init_config()
         pass
+
+    def init_config(self):
+        with open("config.json", "r") as f:
+            data = json.load(f)
+            self.secret = data["osu_secret"]
+            self.oid = data["osu_app_id"]
+            self.max_worker = int(data["max_worker"])
 
     def get_map_collection(self) -> dict:
         self.collections = collection_to_dict(
@@ -179,9 +190,7 @@ class Collection:
             print(f"{id} failed, download manually")
             return
         d = r.headers["Content-Disposition"]
-        filename = urllib.parse.unquote(
-            d.split("filename=")[1].strip(),
-        ).replace("%20", " ")
+        filename = urllib.parse.unquote(d.split("filename=")[1].strip()).replace("%20", " ")
         filename = re.sub(r'[\/\\\*:\?"\<>\|]', "", filename)
         print(f"Downloading: {filename}...")
         with open(f"{path}\\{filename}", "wb") as f:
@@ -192,10 +201,10 @@ class Collection:
 
     def download(self):
         prev = ""
-        all_processes = []
+        currnt_worker = 0
         manager = multiprocessing.Manager()
         prev = manager.dict()
-        token = self.token_request()
+        self.token_request()
 
         os.system("cls")
         with open("hash.txt", "r") as txt:
@@ -204,35 +213,41 @@ class Collection:
         print(f"Found {len(lines)} beatmaps!")
         os.makedirs(self.path, exist_ok=True)
         random.shuffle(lines)
-        limit = input("Check how much? : ")
-        for i, hash in (
-            enumerate(lines[: int(limit)])
-            if lines is not None
-            else print("No beatmaps found.")
-        ):
-            print(f"Downloaded {i}/{len(lines)}")
+        limit = input("Check how much beatmaps to download? (Blank to check all) : ")
+        if limit == "" or " ":
+            limit = lines.__len__()
+
+        for i, hash in (enumerate(lines[: int(limit)]) if lines is not None else print("No beatmaps found.")):
             try:
-                id = self.get_name(hash)["id"]
-                if prev == id:
+                if currnt_worker == self.max_worker:
+                    p.join()
+                    currnt_worker = 0
+                print(f"Downloaded {i}/{limit}")
+                try:
+                    id = self.get_name(hash)["id"]
+                    if prev == id:
+                        continue
+                except:
+                    prev = id
                     continue
-            except:
+                p = Process(target=self.get_from_id, args=(self.path, id,))
+                p.start()
                 prev = id
-                continue
-            p = Process(
-                target=self.get_from_id,
-                args=(
-                    self.path,
-                    id,
-                ),
-            )
-            p.start()
-            prev = id
-
-        for p in all_processes:
-            p.join()
-
+                currnt_worker += 1
+            except Exception as e:
+                print(f"{e} - Terminate")
+                return
+        p.join()
         print("Done!")
-        input("Press any key...")
+
+
+    def __getstate__(self):
+        self_dict = self.__dict__.copy()
+        del self_dict['pool']
+        return self_dict
+
+    def __setstate__(self, state):
+        self.__dict__.update(state)
 
 
 class Menu:
@@ -261,7 +276,7 @@ class Menu:
                         ("Save all beatmap from songs id to osu.txt", 1),
                         ("Download all beatmap from local osu.txt", 2),
                         ("Save all beatmaps from collections.db to hash.txt", 3),
-                        ("Download all breatmap from local has.txt", 4),
+                        ("Download all breatmap from local hash.txt", 4),
                         ("Exit", 5),
                     ],
                 ),
