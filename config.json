@@ -1,4 +1,5 @@
 {
     "osu_secret" : "",
-    "osu_app_id" : ""
+    "osu_app_id" : "",
+    "max_worker" : 3,
 }
