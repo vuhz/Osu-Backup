@@ -37,8 +37,12 @@ except ImportError:
 class Songs:
     def __init__(self, path) -> None:
         self.path = path
+        self.max_worker = 0
         pass
-
+    def init_config(self):
+        with open("config.json", "r") as f:
+            data = json.load(f)
+            self.max_worker = int(data["max_worker"])
     # write all beatmaps id to osu.txt
     def save(self):
         try:
@@ -58,13 +62,31 @@ class Songs:
         except KeyboardInterrupt:
             print("Program stopped by user")
 
-    # fancy single process
+    def get_from_id(self, path, id, i, limit):
+        r = requests.get(f"https://api.chimu.moe/v1/download/{id}", stream=True)
+        if r.headers["Content-Type"] != "application/octet-stream":
+            print(f"{id} failed, download manually")
+            return
+        d = r.headers["Content-Disposition"]
+        filename = urllib.parse.unquote(d.split("filename=")[1].strip()).replace("%20", " ")
+        filename = re.sub(r'[\/\\\*:\?"\<>\|]', "", filename)
+        print(f"[{i+1}/{limit}] - Downloading: {filename}...")
+        with open(f"{path}\\{filename}", "wb") as f:
+            for chunk in r.iter_content(1024):
+                if chunk:
+                    f.write(chunk)
+        return id
+    
     def download(self):
         fileExist, dwn = 0, 0
         ls = []
         os.system("cls")
-        with open("osu.txt", "r") as txt:
-            lines = [line.rstrip("\n") for line in txt.readlines()]
+        try:
+            with open("osu.txt", "r") as txt:
+                lines = [line.rstrip("\n") for line in txt.readlines()]
+        except FileNotFoundError:
+            print('osu.txt not found!')
+            return
         print(f"Found {len(lines)} beatmaps!")
         os.makedirs(self.path, exist_ok=True)
         files = os.listdir(f"{self.path}")
@@ -72,7 +94,6 @@ class Songs:
 
         ls = []
         os.system("cls")
-        # checking all beatmaps in osu.txt to skip duplicates
         for i, item in enumerate(lines):
             print(f"Checking all beatmaps: {i}/{len(lines)}", end="\r")
             number = int(re.findall(pattern, item)[0])
@@ -83,49 +104,22 @@ class Songs:
                     fileExist += 1
                     break
             if not found:
-                # all beatmap id will be in this list
-                # print(f'Found {number}')
                 ls.append(number)
         random.shuffle(ls)
 
+        currnt_worker = 0
         for i, id in enumerate(ls) if ls is not None else print("No beatmaps found."):
-            os.system("cls")
-            print(f"Downloaded {i}/{len(ls)}")
-
-            # request to chimu api
-            r = requests.get(f"https://api.chimu.moe/v1/download/{id}", stream=True)
-
-            # exist?
-            if r.headers["Content-Type"] != "application/octet-stream":
-                print(f"{id} failed, download manually")
-                continue
-
-            # get download
-            d = r.headers["Content-Disposition"]
-
-            # regex for .osk form (<id> <artist> - <file name>.<osz/osk>) otherwise file cannot be oppened
-            filename = urllib.parse.unquote(
-                d.split("filename=")[1].strip(),
-            ).replace("%20", " ")
-            filename = re.sub(r'[\/\\\*:\?"\<>\|]', "", filename)
-            print(f"Downloading: {filename}...")
-
-            # progress bar
-            total_size = int(r.headers.get("Content-Length", 0))
-            block_size = 1024
-            progress = tqdm.tqdm(total=total_size, unit="iB", unit_scale=True)
-
-            # first create .osz file, then update that file continuously until done
-            with open(f"{self.path}\\{filename}", "wb") as f:
-                for chunk in r.iter_content(block_size):
-                    if chunk:
-                        f.write(chunk)
-                        progress.update(len(chunk))
-                progress.close()
-
+            if currnt_worker == self.max_worker:
+                p.join()
+                currnt_worker = 0
+            p = Process(target=self.get_from_id, args=(self.path, id, i, len(ls),))
+            p.start()
+            currnt_worker += 1
             dwn += 1
-            print("\n")
-        os.system("cls")
+        try:
+            p.join()
+        except UnboundLocalError:
+            pass
         print(f"Beatmaps existed: {fileExist} | Beatmaps downloaded: {dwn} ")
         return
 
@@ -208,9 +202,12 @@ class Collection:
         self.token_request()
 
         os.system("cls")
-        with open("hash.txt", "r") as txt:
-            lines = [line.rstrip("\n") for line in txt.readlines()]
-
+        try:
+            with open("hash.txt", "r") as txt:
+                lines = [line.rstrip("\n") for line in txt.readlines()]
+        except UnboundLocalError:
+            print("hash.txt not found!")
+            return
         print(f"Found {len(lines)} beatmaps!")
         os.makedirs(self.path, exist_ok=True)
         random.shuffle(lines)
