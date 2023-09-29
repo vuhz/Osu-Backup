@@ -184,7 +184,7 @@ class Collection:
                     f.write(hash.encode("utf-8") + b"\n")
                     print(f"Wrote {hash} from {collection['name']}")
 
-    def get_from_id(self, path, id):
+    def get_from_id(self, path, id, i, limit):
         r = requests.get(f"https://api.chimu.moe/v1/download/{id}", stream=True)
         if r.headers["Content-Type"] != "application/octet-stream":
             print(f"{id} failed, download manually")
@@ -192,7 +192,7 @@ class Collection:
         d = r.headers["Content-Disposition"]
         filename = urllib.parse.unquote(d.split("filename=")[1].strip()).replace("%20", " ")
         filename = re.sub(r'[\/\\\*:\?"\<>\|]', "", filename)
-        print(f"Downloading: {filename}...")
+        print(f"[{i+1}/{limit}] - Downloading: {filename}...")
         with open(f"{path}\\{filename}", "wb") as f:
             for chunk in r.iter_content(1024):
                 if chunk:
@@ -201,6 +201,7 @@ class Collection:
 
     def download(self):
         prev = ""
+        id = ""
         currnt_worker = 0
         manager = multiprocessing.Manager()
         prev = manager.dict()
@@ -214,15 +215,13 @@ class Collection:
         os.makedirs(self.path, exist_ok=True)
         random.shuffle(lines)
         limit = input("Check how much beatmaps to download? (Blank to check all) : ")
-        if limit == "" or " ":
-            limit = lines.__len__()
-
+        if limit == "" or limit == " ":
+            limit = len(lines)
         for i, hash in (enumerate(lines[: int(limit)]) if lines is not None else print("No beatmaps found.")):
             try:
                 if currnt_worker == self.max_worker:
                     p.join()
                     currnt_worker = 0
-                print(f"Downloaded {i}/{limit}")
                 try:
                     id = self.get_name(hash)["id"]
                     if prev == id:
@@ -230,7 +229,7 @@ class Collection:
                 except:
                     prev = id
                     continue
-                p = Process(target=self.get_from_id, args=(self.path, id,))
+                p = Process(target=self.get_from_id, args=(self.path, id, i, limit,))
                 p.start()
                 prev = id
                 currnt_worker += 1
@@ -240,7 +239,7 @@ class Collection:
         p.join()
         print("Done!")
 
-
+    # https://stackoverflow.com/questions/59232822/python-multiprocessing-pool-raise-valueerrorpool-not-running-valueerror-po
     def __getstate__(self):
         self_dict = self.__dict__.copy()
         del self_dict['pool']
@@ -308,7 +307,8 @@ class Menu:
             case _:
                 print("Invalid input!")
 
-
-if __name__ == "__main__":
+if __name__ == '__main__': 
+    # https://stackoverflow.com/questions/7067787/python-multiprocessing-processes-become-copies-of-the-main-process-when-run-fr
+    multiprocessing.freeze_support()
     menu = Menu()
     menu.menu()
